@@ -65,7 +65,8 @@ PROFILE = load_profile()
 # Pre-filter
 TITLE_EXCLUDE = [
     "senior", "lead", "principal", "staff engineer", "manager",
-    "architect", "arkitekt", "chef", "cto",
+    "architect", "arkitekt", "chef", "cto", "lia", "praktik",
+    "praktikant", "internship", "examensjobb", "exjobb", "thesis",
 ]
 TEXT_EXCLUDE = [
     "lead developer", "tech lead", "principal", "staff engineer",
@@ -74,6 +75,10 @@ TEXT_EXCLUDE = [
     "erfaren utvecklare", "erfaren systemutvecklare",
     "10+ years", "10 years experience", "8+ years", "8 years experience",
     "7+ years", "7 years experience", "15 years", "flera ars erfarenhet",
+    "lia-praktik", "lia praktik", "larande i arbete", "lärande i arbete",
+    "lia-student", "praktikplats", "praktikant", "student internship",
+    "internship", "unpaid internship", "examensjobb", "examensarbete",
+    "exjobb", "master thesis", "bachelor thesis",
 ]
 MUST_PASS = [
     "develop", "developer", "engineer", "programmer", "programmerare",
@@ -86,7 +91,7 @@ MUST_PASS = [
 ]
 ENTRY_LEVEL_SIGNALS = [
     "junior", "graduate", "trainee", "entry level", "entry-level",
-    "nyexaminerad", "nyutexaminerad", "examensjobb", "praktik",
+    "nyexaminerad", "nyutexaminerad",
     "0-1 years", "0-2 years", "no experience",
 ]
 
