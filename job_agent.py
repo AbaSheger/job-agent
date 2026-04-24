@@ -25,6 +25,9 @@ TRACKER_FILE     = BASE_DIR / "tracker.json"
 CANDIDATE_PROFILE_FILE = BASE_DIR / "candidate_profile.txt"
 MIN_SCORE        = 6
 MAX_JOBS_MSG     = 15
+JOBTECH_LIMIT    = 75
+LINKEDIN_RESULTS = 30
+LINKEDIN_HOURS   = 72
 JOBTECH_URL      = "https://jobsearch.api.jobtechdev.se/search"
 CLAUDE_MODEL     = "claude-haiku-4-5-20251001"
 
@@ -60,24 +63,42 @@ def load_profile():
 
 PROFILE = load_profile()
 # Pre-filter
-HARD_EXCLUDE = [
-    "senior developer", "senior engineer", "senior software", "lead developer",
-    "tech lead", "principal engineer", "head of engineering", "cto",
+TITLE_EXCLUDE = [
+    "senior", "lead", "principal", "staff engineer", "manager",
+    "architect", "arkitekt", "chef", "cto",
+]
+TEXT_EXCLUDE = [
+    "lead developer", "tech lead", "principal", "staff engineer",
+    "head of engineering", "engineering manager", "developer manager",
+    "team manager", "team lead", "cto", "architect", "arkitekt",
+    "erfaren utvecklare", "erfaren systemutvecklare",
     "10+ years", "10 years experience", "8+ years", "8 years experience",
-    "7+ years", "15 years",
+    "7+ years", "7 years experience", "15 years", "flera ars erfarenhet",
 ]
 MUST_PASS = [
     "develop", "developer", "engineer", "programmer", "programmerare",
     "utvecklare", "java", "python", "backend", "frontend", "fullstack",
     "devops", "test", "qa ", "quality assurance", "it-support", "it support",
     "software", "mjukvara", "system", "data engineer", "cloud",
-    "konsult", ".net", "react", "angular",
+    "konsult", ".net", "react", "angular", "supporttekniker",
+    "applikationssupport", "application support", "technical support",
+    "graduate", "trainee", "nyexaminerad", "junior",
+]
+ENTRY_LEVEL_SIGNALS = [
+    "junior", "graduate", "trainee", "entry level", "entry-level",
+    "nyexaminerad", "nyutexaminerad", "examensjobb", "praktik",
+    "0-1 years", "0-2 years", "no experience",
 ]
 
 def pre_filter(title, description):
+    title_text = title.lower()
     text = (title + " " + description).lower()
-    if any(kw in text for kw in HARD_EXCLUDE):
+    if any(kw in title_text for kw in TITLE_EXCLUDE):
         return False
+    if any(kw in text for kw in TEXT_EXCLUDE):
+        return False
+    if any(kw in title_text for kw in ENTRY_LEVEL_SIGNALS):
+        return True
     return any(kw in text for kw in MUST_PASS)
 
 # Dedup key
@@ -108,9 +129,15 @@ JOBTECH_QUERIES = [
     "spring boot", "backend developer", "fullstack developer",
     "junior software engineer", "qa testare", "junior devops",
     "react developer", "graduate developer", "junior .net",
+    "javautvecklare", "backendutvecklare", "frontendutvecklare",
+    "systemutvecklare junior", "nyexaminerad utvecklare",
+    "trainee developer", "trainee systemutvecklare",
+    "test automation", "testare junior", "qa engineer",
+    "application support", "applikationssupport", "it support",
+    "cloud engineer junior", "devops trainee",
 ]
 
-def fetch_jobtech(query, limit=50):
+def fetch_jobtech(query, limit=JOBTECH_LIMIT):
     try:
         r = requests.get(JOBTECH_URL, params={"q": query, "limit": limit}, timeout=15)
         r.raise_for_status()
@@ -153,6 +180,12 @@ LINKEDIN_QUERIES = [
     "junior software engineer", "junior fullstack developer",
     "qa engineer junior", "junior devops engineer",
     "graduate software developer", "junior .net developer",
+    "junior react developer", "junior frontend developer",
+    "junior test automation engineer", "junior qa tester",
+    "graduate developer Sweden", "trainee developer Sweden",
+    "entry level software engineer Sweden",
+    "application support developer Sweden",
+    "junior cloud engineer Sweden",
 ]
 
 def strip_html(text):
@@ -169,8 +202,8 @@ def collect_linkedin():
                     site_name=["linkedin"],
                     search_term=query,
                     location="Sweden",
-                    results_wanted=20,
-                    hours_old=48,
+                    results_wanted=LINKEDIN_RESULTS,
+                    hours_old=LINKEDIN_HOURS,
                     linkedin_fetch_description=True,
                 )
                 for _, row in df.iterrows():
