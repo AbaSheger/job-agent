@@ -36,6 +36,13 @@ LINKEDIN_RESULTS = 10
 LINKEDIN_HOURS   = 24
 JOBTECH_URL      = "https://jobsearch.api.jobtechdev.se/search"
 CLAUDE_MODEL     = "claude-haiku-4-5-20251001"
+REPUTABLE_COMPANIES = [
+    "spotify", "klarna", "tink", "mongodb", "elastic", "gitlab", "github",
+    "atlassian", "canonical", "red hat", "docker", "cloudflare", "stripe",
+    "wise", "revolut", "adyen", "booking.com", "shopify", "datadog",
+    "microsoft", "google", "amazon", "aws", "apple", "meta", "netflix",
+    "jetbrains", "miro", "automattic", "thoughtworks", "accenture",
+]
 
 # Candidate profile
 SAMPLE_PROFILE = """
@@ -113,7 +120,8 @@ def pre_filter(title, description):
     return any(kw in text for kw in MUST_PASS)
 
 def candidate_priority(job):
-    text = f"{job['title']} {job['desc'][:500]}".lower()
+    company = job["company"].lower()
+    text = f"{job['title']} {company} {job['location']} {job['desc'][:500]}".lower()
     score = 0
     boosts = {
         "junior": 10,
@@ -136,6 +144,12 @@ def candidate_priority(job):
     for keyword, weight in boosts.items():
         if keyword in text:
             score += weight
+    if job.get("remote"):
+        score += 8
+    if "remote" in text:
+        score += 5
+    if any(company_name in company for company_name in REPUTABLE_COMPANIES):
+        score += 10
     if job["source"] == "Arbetsformedlingen":
         score += 2
     return score
@@ -208,6 +222,7 @@ def parse_jobtech(raw):
         "desc":      desc.get("text", "") if isinstance(desc, dict) else "",
         "published": (raw.get("publication_date") or "")[:10],
         "source":    "Arbetsformedlingen",
+        "remote":    False,
     }
 
 def collect_jobtech():
@@ -229,6 +244,13 @@ LINKEDIN_QUERIES = [
     "graduate software developer", "junior .net developer",
     "junior react developer", "junior qa tester",
 ]
+REMOTE_LINKEDIN_QUERIES = [
+    "junior software engineer remote",
+    "junior backend developer remote",
+    "graduate software engineer remote",
+    "junior developer remote Europe",
+]
+REMOTE_LINKEDIN_LOCATIONS = ["Europe", "European Union", "United Kingdom"]
 
 def strip_html(text):
     return re.sub(r"<[^>]+>", " ", text or "").strip()
@@ -237,20 +259,29 @@ def collect_linkedin():
     pool = {}
     try:
         from jobspy import scrape_jobs
-        for query in LINKEDIN_QUERIES:
-            print(f"    [{query}]")
+        searches = [(query, "Sweden", False) for query in LINKEDIN_QUERIES]
+        searches += [
+            (query, location, True)
+            for query in REMOTE_LINKEDIN_QUERIES
+            for location in REMOTE_LINKEDIN_LOCATIONS
+        ]
+        for query, location, remote_only in searches:
+            remote_label = " remote" if remote_only else ""
+            print(f"    [{query} @ {location}{remote_label}]")
             try:
                 df = scrape_jobs(
                     site_name=["linkedin"],
                     search_term=query,
-                    location="Sweden",
+                    location=location,
                     results_wanted=LINKEDIN_RESULTS,
                     hours_old=LINKEDIN_HOURS,
+                    is_remote=remote_only,
                     linkedin_fetch_description=True,
                 )
                 for _, row in df.iterrows():
                     title   = str(row.get("title") or "Unknown role")
                     company = str(row.get("company") or "Unknown")
+                    is_remote = bool(row.get("is_remote")) or remote_only
                     key     = job_key(title, company)
                     if key not in pool:
                         pool[key] = {
@@ -261,10 +292,11 @@ def collect_linkedin():
                             "url":       str(row.get("job_url") or ""),
                             "desc":      strip_html(str(row.get("description") or ""))[:4000],
                             "published": str(row.get("date_posted") or "")[:10],
-                            "source":    "LinkedIn",
+                            "source":    "LinkedIn Remote" if is_remote else "LinkedIn",
+                            "remote":    is_remote,
                         }
             except Exception as e:
-                print(f"    LinkedIn query error ({query!r}): {e}")
+                print(f"    LinkedIn query error ({query!r}, {location!r}): {e}")
             time.sleep(2)
     except ImportError:
         print("    jobspy not installed - skipping LinkedIn")
@@ -286,7 +318,8 @@ Source: {source}
 Description: {description}
 
 Evaluate fit honestly. Consider: direct skill match, adjacent fit, suitability for someone
-with no commercial dev experience, Swedish market context.
+with no commercial dev experience, Swedish market context, and remote roles outside Sweden
+when the company is reputable and the role is realistic for a junior candidate.
 
 Return exactly:
 {{"score": <1-10>, "reason": "<one honest sentence>", "role_type": "<junior-dev|qa-test|devops|adjacent|long-shot>"}}
@@ -331,7 +364,7 @@ def claude_score(job):
 
 # Telegram
 ROLE_LABEL  = {"junior-dev":"DEV","qa-test":"QA","devops":"OPS","adjacent":"ADJ","long-shot":"TRY"}
-SOURCE_LABEL = {"LinkedIn":"LI","Arbetsformedlingen":"AF"}
+SOURCE_LABEL = {"LinkedIn":"LI","LinkedIn Remote":"REMOTE","Arbetsformedlingen":"AF"}
 score_label = lambda s: "HIGH" if s>=8 else "MED" if s>=6 else "LOW"
 
 def tg(method, **kwargs):
@@ -478,11 +511,13 @@ def main():
     # Filter seen + already actioned
     actioned_keys = {k for k,v in tracker.items() if v.get("status") in ("applied","skip")}
     new_jobs   = [j for j in all_jobs.values() if j["key"] not in seen and j["key"] not in actioned_keys]
+    skipped_repeat_count = len(all_jobs) - len(new_jobs)
     candidates = [j for j in new_jobs if pre_filter(j["title"], j["desc"])]
     candidates = [j for j in candidates if candidate_priority(j) >= MIN_LOCAL_PRIORITY]
     candidates.sort(key=candidate_priority, reverse=True)
     candidates_to_score = candidates[:MAX_CANDIDATES_TO_SCORE]
     print(f"  New + not actioned: {len(new_jobs)}  After pre-filter: {len(candidates)}")
+    print(f"  Skipped already seen/actioned: {skipped_repeat_count}")
     print(f"  Scoring with Claude: {len(candidates_to_score)} / {len(candidates)} candidates")
 
     # Claude scoring
@@ -518,10 +553,11 @@ def main():
     # Send header
     af_count = sum(1 for j in candidates_to_score if j["source"]=="Arbetsformedlingen")
     li_count = sum(1 for j in candidates_to_score if j["source"]=="LinkedIn")
+    remote_count = sum(1 for j in candidates_to_score if j["source"]=="LinkedIn Remote")
     header = (
         f"<b>Job radar - {datetime.now():%d %b %Y}</b>\n"
         f"Evaluated <b>{len(candidates_to_score)}</b> of {len(candidates)} new roles "
-        f"(AF {af_count} - LI {li_count})\n"
+        f"(AF {af_count} - LI {li_count} - Remote {remote_count})\n"
         f"<b>{len(top)}</b> worth applying - tap to track\n"
         "---------------------\n"
     )
