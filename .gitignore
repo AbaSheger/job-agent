@@ -1,0 +1,8 @@
+candidate_profile.txt
+seen_jobs.json
+tracker.json
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
