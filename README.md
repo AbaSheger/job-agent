@@ -9,7 +9,7 @@ The project is intentionally small: one scheduled Python workflow, public job AP
 - Searches Arbetsformedlingen Jobtech and LinkedIn via `python-jobspy`
 - Deduplicates roles across sources
 - Filters obvious senior/poor-fit roles before using an LLM
-- Caps Claude scoring to the best-looking candidates to control API cost
+- Caps Claude scoring to a small set of locally ranked candidates to control API cost
 - Scores jobs with Claude using structured JSON output
 - Sends a ranked Telegram digest with apply/save/skip buttons
 - Persists seen jobs and button state between GitHub Actions runs

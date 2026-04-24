@@ -28,11 +28,12 @@ UPDATE_OFFSET_FILE = STATE_DIR / "telegram_update_offset.txt"
 CANDIDATE_PROFILE_FILE = BASE_DIR / "candidate_profile.txt"
 MIN_SCORE        = 6
 MAX_JOBS_MSG     = 15
-MAX_CANDIDATES_TO_SCORE = 25
-MAX_DESC_CHARS   = 1200
-JOBTECH_LIMIT    = 75
-LINKEDIN_RESULTS = 30
-LINKEDIN_HOURS   = 72
+MAX_CANDIDATES_TO_SCORE = 5
+MAX_DESC_CHARS   = 700
+MIN_LOCAL_PRIORITY = 10
+JOBTECH_LIMIT    = 30
+LINKEDIN_RESULTS = 10
+LINKEDIN_HOURS   = 24
 JOBTECH_URL      = "https://jobsearch.api.jobtechdev.se/search"
 CLAUDE_MODEL     = "claude-haiku-4-5-20251001"
 
@@ -127,10 +128,10 @@ def candidate_priority(job):
         "c#": 6,
         "react": 5,
         "frontend": 4,
-        "qa": 4,
-        "test": 4,
-        "devops": 3,
-        "cloud": 3,
+        "qa": 3,
+        "test": 3,
+        "devops": 2,
+        "cloud": 2,
     }
     for keyword, weight in boosts.items():
         if keyword in text:
@@ -175,15 +176,12 @@ def save_update_offset(offset):
 # Jobtech
 JOBTECH_QUERIES = [
     "java developer", "systemutvecklare java", "junior developer",
-    "spring boot", "backend developer", "fullstack developer",
+    "spring boot", "backend developer",
     "junior software engineer", "qa testare", "junior devops",
-    "react developer", "graduate developer", "junior .net",
+    "graduate developer", "junior .net",
     "javautvecklare", "backendutvecklare", "frontendutvecklare",
     "systemutvecklare junior", "nyexaminerad utvecklare",
-    "trainee developer", "trainee systemutvecklare",
-    "test automation", "testare junior", "qa engineer",
-    "application support", "applikationssupport", "it support",
-    "cloud engineer junior", "devops trainee",
+    "testare junior", "qa engineer",
 ]
 
 def fetch_jobtech(query, limit=JOBTECH_LIMIT):
@@ -229,12 +227,7 @@ LINKEDIN_QUERIES = [
     "junior software engineer", "junior fullstack developer",
     "qa engineer junior", "junior devops engineer",
     "graduate software developer", "junior .net developer",
-    "junior react developer", "junior frontend developer",
-    "junior test automation engineer", "junior qa tester",
-    "graduate developer Sweden", "trainee developer Sweden",
-    "entry level software engineer Sweden",
-    "application support developer Sweden",
-    "junior cloud engineer Sweden",
+    "junior react developer", "junior qa tester",
 ]
 
 def strip_html(text):
@@ -486,6 +479,7 @@ def main():
     actioned_keys = {k for k,v in tracker.items() if v.get("status") in ("applied","skip")}
     new_jobs   = [j for j in all_jobs.values() if j["key"] not in seen and j["key"] not in actioned_keys]
     candidates = [j for j in new_jobs if pre_filter(j["title"], j["desc"])]
+    candidates = [j for j in candidates if candidate_priority(j) >= MIN_LOCAL_PRIORITY]
     candidates.sort(key=candidate_priority, reverse=True)
     candidates_to_score = candidates[:MAX_CANDIDATES_TO_SCORE]
     print(f"  New + not actioned: {len(new_jobs)}  After pre-filter: {len(candidates)}")
