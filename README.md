@@ -11,6 +11,7 @@ The project is intentionally small: one scheduled Python workflow, public job AP
 - Filters obvious senior/poor-fit roles before using an LLM
 - Scores jobs with Claude using structured JSON output
 - Sends a ranked Telegram digest with apply/save/skip buttons
+- Persists seen jobs and button state between GitHub Actions runs
 - Runs manually or on a GitHub Actions schedule
 
 ## Public Repo Safety
@@ -23,6 +24,7 @@ This repo keeps those out of source control:
 - `CANDIDATE_PROFILE` can be stored as a GitHub Actions secret.
 - For local runs, `candidate_profile.txt` can be placed beside `job_agent.py`; it is ignored by Git.
 - `seen_jobs.json` and `tracker.json` are generated runtime state and ignored by Git.
+- On GitHub Actions, runtime state is stored in an Actions cache, not committed to the repository.
 
 ## Setup
 

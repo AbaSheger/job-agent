@@ -1,6 +1,8 @@
 candidate_profile.txt
 seen_jobs.json
 tracker.json
+telegram_update_offset.txt
+.agent_state/
 __pycache__/
 *.py[cod]
 .env

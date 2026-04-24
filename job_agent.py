@@ -20,8 +20,11 @@ TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 ANTHROPIC_KEY    = os.environ["ANTHROPIC_API_KEY"]
 BASE_DIR         = Path(__file__).parent
-SEEN_FILE        = BASE_DIR / "seen_jobs.json"
-TRACKER_FILE     = BASE_DIR / "tracker.json"
+STATE_DIR        = Path(os.environ.get("JOB_AGENT_STATE_DIR", BASE_DIR))
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+SEEN_FILE        = STATE_DIR / "seen_jobs.json"
+TRACKER_FILE     = STATE_DIR / "tracker.json"
+UPDATE_OFFSET_FILE = STATE_DIR / "telegram_update_offset.txt"
 CANDIDATE_PROFILE_FILE = BASE_DIR / "candidate_profile.txt"
 MIN_SCORE        = 6
 MAX_JOBS_MSG     = 15
@@ -127,6 +130,17 @@ def load_tracker():
 
 def save_tracker(data):
     TRACKER_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+
+def load_update_offset():
+    if UPDATE_OFFSET_FILE.exists():
+        try:
+            return int(UPDATE_OFFSET_FILE.read_text().strip())
+        except ValueError:
+            return None
+    return None
+
+def save_update_offset(offset):
+    UPDATE_OFFSET_FILE.write_text(str(offset))
 
 # Jobtech
 JOBTECH_QUERIES = [
@@ -305,8 +319,71 @@ def tg(method, **kwargs):
             timeout=15,
         )
         r.raise_for_status()
+        return r.json()
     except Exception as e:
         print(f"  tg.{method} error: {e}")
+        return None
+
+def process_callback_updates(tracker):
+    offset = load_update_offset()
+    params = {"timeout": 0, "allowed_updates": json.dumps(["callback_query"])}
+    if offset is not None:
+        params["offset"] = offset
+
+    try:
+        r = requests.get(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates",
+            params=params,
+            timeout=15,
+        )
+        r.raise_for_status()
+        updates = r.json().get("result", [])
+    except Exception as e:
+        print(f"  tg.getUpdates error: {e}")
+        return tracker
+
+    if not updates:
+        return tracker
+
+    changed = 0
+    next_offset = offset
+    status_labels = {
+        "applied": "Applied",
+        "skip": "Not interested",
+        "save": "Saved",
+    }
+
+    for update in updates:
+        next_offset = max(next_offset or 0, update["update_id"] + 1)
+        callback = update.get("callback_query") or {}
+        data = callback.get("data", "")
+        callback_id = callback.get("id")
+        message = callback.get("message") or {}
+        chat = message.get("chat") or {}
+
+        if str(chat.get("id")) != str(TELEGRAM_CHAT_ID):
+            continue
+        if "|" not in data:
+            continue
+
+        status, key = data.split("|", 1)
+        if status not in status_labels:
+            continue
+
+        tracker.setdefault(key, {})
+        tracker[key]["status"] = status
+        tracker[key]["updated"] = datetime.now().strftime("%Y-%m-%d")
+        changed += 1
+
+        if callback_id:
+            tg("answerCallbackQuery", callback_query_id=callback_id, text=status_labels[status])
+
+    if next_offset is not None:
+        save_update_offset(next_offset)
+    if changed:
+        save_tracker(tracker)
+        print(f"  Processed {changed} Telegram button update(s)")
+    return tracker
 
 def send_plain(text):
     tg("sendMessage",
@@ -364,6 +441,7 @@ def main():
     print(f"[{datetime.now():%Y-%m-%d %H:%M}] Job agent starting...")
     seen    = load_seen()
     tracker = load_tracker()
+    tracker = process_callback_updates(tracker)
 
     # Collect
     print("  Fetching Jobtech...")
@@ -392,7 +470,7 @@ def main():
                 "role_type": result.get("role_type", "adjacent"),
             })
             scored.append(job)
-            # Register in tracker so webhook can update it later
+            # Register in tracker so Telegram button callbacks can update it later.
             tracker[job["key"]] = {
                 "title":   job["title"],
                 "company": job["company"],
