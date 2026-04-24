@@ -28,6 +28,8 @@ UPDATE_OFFSET_FILE = STATE_DIR / "telegram_update_offset.txt"
 CANDIDATE_PROFILE_FILE = BASE_DIR / "candidate_profile.txt"
 MIN_SCORE        = 6
 MAX_JOBS_MSG     = 15
+MAX_CANDIDATES_TO_SCORE = 25
+MAX_DESC_CHARS   = 1200
 JOBTECH_LIMIT    = 75
 LINKEDIN_RESULTS = 30
 LINKEDIN_HOURS   = 72
@@ -108,6 +110,34 @@ def pre_filter(title, description):
     if any(kw in title_text for kw in ENTRY_LEVEL_SIGNALS):
         return True
     return any(kw in text for kw in MUST_PASS)
+
+def candidate_priority(job):
+    text = f"{job['title']} {job['desc'][:500]}".lower()
+    score = 0
+    boosts = {
+        "junior": 10,
+        "nyexaminerad": 10,
+        "nyutexaminerad": 10,
+        "graduate": 8,
+        "trainee": 8,
+        "java": 7,
+        "spring": 7,
+        "backend": 6,
+        ".net": 6,
+        "c#": 6,
+        "react": 5,
+        "frontend": 4,
+        "qa": 4,
+        "test": 4,
+        "devops": 3,
+        "cloud": 3,
+    }
+    for keyword, weight in boosts.items():
+        if keyword in text:
+            score += weight
+    if job["source"] == "Arbetsformedlingen":
+        score += 2
+    return score
 
 # Dedup key
 def job_key(title, company):
@@ -277,7 +307,7 @@ def claude_score(job):
         company=job["company"],
         location=job["location"],
         source=job["source"],
-        description=job["desc"][:3000],
+        description=job["desc"][:MAX_DESC_CHARS],
     )
     try:
         resp = requests.post(
@@ -456,12 +486,15 @@ def main():
     actioned_keys = {k for k,v in tracker.items() if v.get("status") in ("applied","skip")}
     new_jobs   = [j for j in all_jobs.values() if j["key"] not in seen and j["key"] not in actioned_keys]
     candidates = [j for j in new_jobs if pre_filter(j["title"], j["desc"])]
+    candidates.sort(key=candidate_priority, reverse=True)
+    candidates_to_score = candidates[:MAX_CANDIDATES_TO_SCORE]
     print(f"  New + not actioned: {len(new_jobs)}  After pre-filter: {len(candidates)}")
+    print(f"  Scoring with Claude: {len(candidates_to_score)} / {len(candidates)} candidates")
 
     # Claude scoring
     scored = []
-    for i, job in enumerate(candidates):
-        print(f"  [{i+1}/{len(candidates)}] {job['title']} @ {job['company']}")
+    for i, job in enumerate(candidates_to_score):
+        print(f"  [{i+1}/{len(candidates_to_score)}] {job['title']} @ {job['company']}")
         result = claude_score(job)
         if result and result.get("score", 0) >= MIN_SCORE:
             job.update({
@@ -489,11 +522,11 @@ def main():
     print(f"  Scored >= {MIN_SCORE}: {len(scored)}  Sending top: {len(top)}")
 
     # Send header
-    af_count = sum(1 for j in candidates if j["source"]=="Arbetsformedlingen")
-    li_count = sum(1 for j in candidates if j["source"]=="LinkedIn")
+    af_count = sum(1 for j in candidates_to_score if j["source"]=="Arbetsformedlingen")
+    li_count = sum(1 for j in candidates_to_score if j["source"]=="LinkedIn")
     header = (
         f"<b>Job radar - {datetime.now():%d %b %Y}</b>\n"
-        f"Evaluated <b>{len(candidates)}</b> new roles "
+        f"Evaluated <b>{len(candidates_to_score)}</b> of {len(candidates)} new roles "
         f"(AF {af_count} - LI {li_count})\n"
         f"<b>{len(top)}</b> worth applying - tap to track\n"
         "---------------------\n"
