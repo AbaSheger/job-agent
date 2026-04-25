@@ -523,6 +523,7 @@ def pipeline_summary(tracker):
 # Main
 def main():
     print(f"[{datetime.now():%Y-%m-%d %H:%M}] Job agent starting...")
+    print(f"  State backend: {state_store.backend_name()}")
     seen    = load_seen()
     tracker = load_tracker()
     tracker = process_callback_updates(tracker)

@@ -13,6 +13,10 @@ def configured():
     return bool(SUPABASE_URL and SUPABASE_KEY)
 
 
+def backend_name():
+    return "Supabase" if configured() else "local JSON/cache"
+
+
 def _headers():
     return {
         "apikey": SUPABASE_KEY,
