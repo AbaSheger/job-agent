@@ -1,8 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/telegram_webhook.py": {
-      "excludeFiles": "{.git/**,.github/**,__pycache__/**,.agent_state/**}"
-    }
-  }
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }
