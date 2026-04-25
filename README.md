@@ -1,6 +1,6 @@
 # Job Agent
 
-Daily AI-assisted job search agent for Sweden. It collects roles from Jobtech and LinkedIn, filters out poor fits, asks Claude to score each remaining job against a candidate profile, and sends a ranked Telegram digest every morning.
+Daily AI-assisted job search agent for Sweden. It collects roles from Jobtech and LinkedIn, filters out poor fits, asks Claude to rank a shortlist against a candidate profile, and sends a ranked Telegram digest every morning.
 
 The project is intentionally small: one scheduled Python workflow, public job APIs/scraping, a private profile prompt, local JSON state, and Telegram delivery.
 
@@ -16,6 +16,14 @@ The project is intentionally small: one scheduled Python workflow, public job AP
 - Persists seen jobs and button state between GitHub Actions runs
 - Supports optional Supabase state and a Vercel Telegram webhook for instant button tracking
 - Runs manually or on a GitHub Actions schedule
+
+## Screenshots
+
+Portfolio-safe demo screenshots generated from the current workflow:
+
+![Telegram job digest with application tracking buttons](docs/screenshots/telegram-digest.png)
+
+![Job Agent system flow](docs/screenshots/system-flow.png)
 
 ## Public Repo Safety
 
