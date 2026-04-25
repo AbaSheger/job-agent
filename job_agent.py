@@ -30,9 +30,11 @@ UPDATE_OFFSET_FILE = STATE_DIR / "telegram_update_offset.txt"
 CANDIDATE_PROFILE_FILE = BASE_DIR / "candidate_profile.txt"
 MIN_SCORE        = 6
 MAX_JOBS_MSG     = 15
-MAX_CANDIDATES_TO_SCORE = 5
-MAX_DESC_CHARS   = 700
-MIN_LOCAL_PRIORITY = 10
+MAX_CANDIDATES_TO_SCORE = 30
+MAX_BATCH_RESULTS = 8
+MAX_DESC_CHARS   = 450
+MIN_LOCAL_PRIORITY = 6
+MAX_JOBS_PER_COMPANY = 2
 JOBTECH_LIMIT    = 30
 LINKEDIN_RESULTS = 10
 LINKEDIN_HOURS   = 24
@@ -155,6 +157,19 @@ def candidate_priority(job):
     if job["source"] == "Arbetsformedlingen":
         score += 2
     return score
+
+def diversify_candidates(candidates):
+    selected = []
+    company_counts = {}
+    for job in candidates:
+        company_key = job["company"].lower().strip()
+        if company_counts.get(company_key, 0) >= MAX_JOBS_PER_COMPANY:
+            continue
+        selected.append(job)
+        company_counts[company_key] = company_counts.get(company_key, 0) + 1
+        if len(selected) >= MAX_CANDIDATES_TO_SCORE:
+            break
+    return selected
 
 # Dedup key
 def job_key(title, company):
@@ -347,6 +362,21 @@ Return exactly:
 
 Score guide: 9-10 strong match, 7-8 good fit, 5-6 adjacent/worth trying, 1-4 skip."""
 
+BATCH_EVAL_PROMPT = """Candidate profile:
+{profile}
+
+Jobs:
+{jobs}
+
+Evaluate these jobs honestly for the candidate. Prefer realistic junior/graduate roles,
+strong adjacent entry-level roles, and reputable remote companies. Penalize internships,
+unrealistic senior expectations, vague staffing spam, and duplicate roles from the same company.
+
+Return valid JSON only:
+{{"jobs":[{{"key":"<job key>","score":<1-10>,"reason":"<one honest sentence>","role_type":"<junior-dev|qa-test|devops|adjacent|long-shot>"}}]}}
+
+Return at most {max_results} jobs. Only include jobs scoring {min_score}/10 or higher."""
+
 def claude_score(job):
     prompt = EVAL_PROMPT.format(
         profile=PROFILE,
@@ -382,6 +412,58 @@ def claude_score(job):
     except Exception as e:
         print(f"    Claude error for '{job['title']}': {e}")
         return None
+
+def format_batch_jobs(jobs):
+    compact = []
+    for i, job in enumerate(jobs, start=1):
+        compact.append(
+            "\n".join([
+                f"{i}. key: {job['key']}",
+                f"title: {job['title']}",
+                f"company: {job['company']}",
+                f"location: {job['location']}",
+                f"source: {job['source']}",
+                f"description: {job['desc'][:MAX_DESC_CHARS]}",
+            ])
+        )
+    return "\n\n".join(compact)
+
+def claude_score_batch(jobs):
+    if not jobs:
+        return []
+
+    prompt = BATCH_EVAL_PROMPT.format(
+        profile=PROFILE,
+        jobs=format_batch_jobs(jobs),
+        max_results=MAX_BATCH_RESULTS,
+        min_score=MIN_SCORE,
+    )
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": CLAUDE_MODEL,
+                "max_tokens": 1400,
+                "system": EVAL_SYSTEM,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=45,
+        )
+        resp.raise_for_status()
+        text = resp.json()["content"][0]["text"].strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        return json.loads(text).get("jobs", [])
+    except Exception as e:
+        print(f"    Claude batch error: {e}")
+        return []
 
 # Telegram
 ROLE_LABEL  = {"junior-dev":"DEV","qa-test":"QA","devops":"OPS","adjacent":"ADJ","long-shot":"TRY"}
@@ -544,34 +626,36 @@ def main():
     candidates = [j for j in new_jobs if pre_filter(j["title"], j["desc"])]
     candidates = [j for j in candidates if candidate_priority(j) >= MIN_LOCAL_PRIORITY]
     candidates.sort(key=candidate_priority, reverse=True)
-    candidates_to_score = candidates[:MAX_CANDIDATES_TO_SCORE]
+    candidates_to_score = diversify_candidates(candidates)
     print(f"  New + not actioned: {len(new_jobs)}  After pre-filter: {len(candidates)}")
     print(f"  Skipped already seen/actioned: {skipped_repeat_count}")
-    print(f"  Scoring with Claude: {len(candidates_to_score)} / {len(candidates)} candidates")
+    print(f"  Batch scoring with Claude: {len(candidates_to_score)} / {len(candidates)} candidates")
 
-    # Claude scoring
+    # Claude scoring in one batch to keep quality high and cost predictable.
     scored = []
-    for i, job in enumerate(candidates_to_score):
-        print(f"  [{i+1}/{len(candidates_to_score)}] {job['title']} @ {job['company']}")
-        result = claude_score(job)
-        if result and result.get("score", 0) >= MIN_SCORE:
-            job.update({
-                "score":     result["score"],
-                "reason":    result.get("reason", ""),
-                "role_type": result.get("role_type", "adjacent"),
-            })
-            scored.append(job)
-            # Register in tracker so Telegram button callbacks can update it later.
-            tracker[job["key"]] = {
-                "title":   job["title"],
-                "company": job["company"],
-                "url":     job["url"],
-                "score":   job["score"],
-                "source":  job["source"],
-                "status":  "new",
-                "added":   datetime.now().strftime("%Y-%m-%d"),
-            }
-        time.sleep(0.3)
+    jobs_by_key = {job["key"]: job for job in candidates_to_score}
+    for result in claude_score_batch(candidates_to_score):
+        job = jobs_by_key.get(result.get("key"))
+        if not job:
+            continue
+        if result.get("score", 0) < MIN_SCORE:
+            continue
+        job.update({
+            "score":     result["score"],
+            "reason":    result.get("reason", ""),
+            "role_type": result.get("role_type", "adjacent"),
+        })
+        scored.append(job)
+        # Register in tracker so Telegram button callbacks can update it later.
+        tracker[job["key"]] = {
+            "title":   job["title"],
+            "company": job["company"],
+            "url":     job["url"],
+            "score":   job["score"],
+            "source":  job["source"],
+            "status":  "new",
+            "added":   datetime.now().strftime("%Y-%m-%d"),
+        }
 
     save_tracker(tracker)
 

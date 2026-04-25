@@ -10,7 +10,7 @@ The project is intentionally small: one scheduled Python workflow, public job AP
 - Includes a small remote-role search for reputable international companies
 - Deduplicates roles across sources
 - Filters obvious senior/poor-fit roles before using an LLM
-- Caps Claude scoring to a small set of locally ranked candidates to control API cost
+- Uses one batched Claude call over a locally ranked shortlist to balance quality and API cost
 - Scores jobs with Claude using structured JSON output
 - Sends a ranked Telegram digest with apply/save/skip buttons
 - Persists seen jobs and button state between GitHub Actions runs
