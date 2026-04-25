@@ -21,7 +21,7 @@ The project is intentionally small: one scheduled Python workflow, public job AP
 
 Portfolio-safe demo screenshots generated from the current workflow:
 
-![Telegram job digest with application tracking buttons](docs/screenshots/telegram-digest.png)
+![Telegram job digest with application tracking buttons](docs/screenshots/telegram-digest.jpg)
 
 ![Job Agent system flow](docs/screenshots/system-flow.png)
 
