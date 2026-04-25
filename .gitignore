@@ -6,5 +6,6 @@ telegram_update_offset.txt
 __pycache__/
 *.py[cod]
 .env
+.vercel/
 .venv/
 venv/
