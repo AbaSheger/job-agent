@@ -51,7 +51,7 @@ The project works without hosted state, but Supabase and Vercel make Telegram bu
 
 ```bash
 curl "https://api.telegram.org/bot$TELEGRAM_TOKEN/setWebhook" \
-  -d "url=https://YOUR_VERCEL_DOMAIN/api/telegram_webhook" \
+  -d "url=https://YOUR_VERCEL_DOMAIN/api" \
   -d "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
   -d 'allowed_updates=["callback_query"]'
 ```
