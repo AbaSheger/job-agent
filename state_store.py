@@ -4,9 +4,9 @@ import os
 import requests
 
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-SUPABASE_TABLE = os.environ.get("SUPABASE_STATE_TABLE", "job_agent_state")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+SUPABASE_TABLE = os.environ.get("SUPABASE_STATE_TABLE", "job_agent_state").strip()
 
 
 def configured():
