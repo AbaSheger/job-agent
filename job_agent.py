@@ -64,7 +64,8 @@ EXPERIENCE:
 - Strong interest in AI-assisted product and engineering workflows
 
 PREFERENCES:
-- Stockholm, Uppsala, hybrid, or remote
+- On-site/hybrid: Stockholm, Uppsala, Gävle, Ludvika, Falun, or anywhere in Dalarna
+- Remote: EU-based companies only (living in Sweden, need EU employment eligibility)
 - Junior developer, QA, DevOps, and adjacent entry-level software roles
 """
 
@@ -111,6 +112,31 @@ ENTRY_LEVEL_SIGNALS = [
     "nyexaminerad", "nyutexaminerad",
     "0-1 years", "0-2 years", "no experience",
 ]
+
+# On-site/hybrid roles must be in a commutable location.
+# Remote jobs bypass this check entirely.
+LOCAL_MUNICIPALITIES = {
+    # Stockholm city + inner suburbs
+    "stockholm", "solna", "sundbyberg", "nacka", "lidingö", "lidingo",
+    "huddinge", "botkyrka", "järfälla", "jarfalla", "täby", "taby",
+    "danderyd", "sollentuna", "upplands väsby", "upplands vasby",
+    "sigtuna", "norrtälje", "vallentuna", "österåker", "osteraker", "vaxholm",
+    # Uppsala
+    "uppsala",
+    # Gävleborg
+    "gävle", "gavle", "sandviken", "hofors", "ockelbo",
+    # Dalarna
+    "falun", "ludvika", "borlänge", "borlange", "hedemora", "avesta",
+    "säter", "sater", "mora", "orsa", "rättvik", "rattvik", "leksand",
+    "malung", "älvdalen", "alvdalen", "vansbro", "gagnef", "smedjebacken",
+}
+LOCAL_COUNTIES = {"dalarna", "gävleborg", "gavleborg", "stockholms", "stockholm", "uppsala"}
+
+def is_location_eligible(job):
+    if job.get("remote"):
+        return True
+    loc = job["location"].lower()
+    return any(m in loc for m in LOCAL_MUNICIPALITIES) or any(c in loc for c in LOCAL_COUNTIES)
 
 def pre_filter(title, description):
     title_text = title.lower()
@@ -285,7 +311,7 @@ REMOTE_LINKEDIN_QUERIES = [
     "graduate software engineer remote",
     "junior developer remote Europe",
 ]
-REMOTE_LINKEDIN_LOCATIONS = ["Europe", "European Union", "United Kingdom"]
+REMOTE_LINKEDIN_LOCATIONS = ["European Union", "Sweden", "Scandinavia"]
 
 def strip_html(text):
     return re.sub(r"<[^>]+>", " ", text or "").strip()
@@ -627,10 +653,11 @@ def main():
     new_jobs   = [j for j in all_jobs.values() if j["key"] not in seen and j["key"] not in actioned_keys]
     skipped_repeat_count = len(all_jobs) - len(new_jobs)
     candidates = [j for j in new_jobs if pre_filter(j["title"], j["desc"])]
+    candidates = [j for j in candidates if is_location_eligible(j)]
     candidates = [j for j in candidates if candidate_priority(j) >= MIN_LOCAL_PRIORITY]
     candidates.sort(key=candidate_priority, reverse=True)
     candidates_to_score = diversify_candidates(candidates)
-    print(f"  New + not actioned: {len(new_jobs)}  After pre-filter: {len(candidates)}")
+    print(f"  New + not actioned: {len(new_jobs)}  After pre-filter + location: {len(candidates)}")
     print(f"  Skipped already seen/actioned: {skipped_repeat_count}")
     print(f"  Batch scoring with Claude: {len(candidates_to_score)} / {len(candidates)} candidates")
 
