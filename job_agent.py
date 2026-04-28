@@ -100,9 +100,9 @@ TEXT_EXCLUDE = [
 MUST_PASS = [
     "develop", "developer", "engineer", "programmer", "programmerare",
     "utvecklare", "java", "python", "backend", "frontend", "fullstack",
-    "devops", "test", "qa ", "quality assurance", "it-support", "it support",
-    "software", "mjukvara", "system", "data engineer", "cloud",
-    "konsult", ".net", "react", "angular", "supporttekniker",
+    "devops", "testare", "qa", "quality assurance", "it-support", "it support",
+    "software", "mjukvara", "data engineer", "cloud",
+    ".net", "react", "angular", "supporttekniker",
     "applikationssupport", "application support", "technical support",
     "graduate", "trainee", "nyexaminerad", "junior",
 ]
@@ -141,7 +141,6 @@ def candidate_priority(job):
         "react": 5,
         "frontend": 4,
         "qa": 3,
-        "test": 3,
         "devops": 2,
         "cloud": 2,
     }
@@ -153,7 +152,7 @@ def candidate_priority(job):
     if "remote" in text:
         score += 5
     if any(company_name in company for company_name in REPUTABLE_COMPANIES):
-        score += 10
+        score += 15
     if job["source"] == "Arbetsformedlingen":
         score += 2
     return score
@@ -343,10 +342,19 @@ EVAL_SYSTEM = (
     "You are a recruiter evaluating job fit. "
     "Respond with valid JSON only - no markdown, no text outside the JSON."
 )
-EVAL_PROMPT = """Candidate profile:
-{profile}
 
-Job:
+# Stable prefix cached on Anthropic's side (profile + instructions never change mid-run).
+# cache_control is silently ignored if the block is under the model's minimum token threshold,
+# but costs nothing and activates automatically once the private profile is long enough.
+_SYSTEM_BLOCK = [
+    {
+        "type": "text",
+        "text": EVAL_SYSTEM + "\n\nCandidate profile:\n" + PROFILE,
+        "cache_control": {"type": "ephemeral"},
+    }
+]
+
+EVAL_PROMPT = """Job:
 Title: {title}
 Company: {company}
 Location: {location}
@@ -358,28 +366,24 @@ with no commercial dev experience, Swedish market context, and remote roles outs
 when the company is reputable and the role is realistic for a junior candidate.
 
 Return exactly:
-{{"score": <1-10>, "reason": "<one honest sentence>", "role_type": "<junior-dev|qa-test|devops|adjacent|long-shot>"}}
+{{"score": <1-10>, "reason": "<one concrete sentence citing a specific technology or requirement from this listing>", "role_type": "<junior-dev|qa-test|devops|adjacent|long-shot>"}}
 
 Score guide: 9-10 strong match, 7-8 good fit, 5-6 adjacent/worth trying, 1-4 skip."""
 
-BATCH_EVAL_PROMPT = """Candidate profile:
-{profile}
-
-Jobs:
+BATCH_EVAL_PROMPT = """Jobs:
 {jobs}
 
-Evaluate these jobs honestly for the candidate. Prefer realistic junior/graduate roles,
+Evaluate these jobs for the candidate above. Prefer realistic junior/graduate roles,
 strong adjacent entry-level roles, and reputable remote companies. Penalize internships,
 unrealistic senior expectations, vague staffing spam, and duplicate roles from the same company.
 
-Return valid JSON only:
-{{"jobs":[{{"key":"<job key>","score":<1-10>,"reason":"<one honest sentence>","role_type":"<junior-dev|qa-test|devops|adjacent|long-shot>"}}]}}
+Return valid JSON only, jobs ranked by fit score descending:
+{{"jobs":[{{"key":"<job key>","score":<1-10>,"reason":"<one concrete sentence citing a specific technology or requirement from the listing>","role_type":"<junior-dev|qa-test|devops|adjacent|long-shot>"}}]}}
 
 Return at most {max_results} jobs. Only include jobs scoring {min_score}/10 or higher."""
 
 def claude_score(job):
     prompt = EVAL_PROMPT.format(
-        profile=PROFILE,
         title=job["title"],
         company=job["company"],
         location=job["location"],
@@ -397,7 +401,7 @@ def claude_score(job):
             json={
                 "model": CLAUDE_MODEL,
                 "max_tokens": 200,
-                "system": EVAL_SYSTEM,
+                "system": _SYSTEM_BLOCK,
                 "messages": [{"role": "user", "content": prompt}],
             },
             timeout=30,
@@ -433,7 +437,6 @@ def claude_score_batch(jobs):
         return []
 
     prompt = BATCH_EVAL_PROMPT.format(
-        profile=PROFILE,
         jobs=format_batch_jobs(jobs),
         max_results=MAX_BATCH_RESULTS,
         min_score=MIN_SCORE,
@@ -449,7 +452,7 @@ def claude_score_batch(jobs):
             json={
                 "model": CLAUDE_MODEL,
                 "max_tokens": 1400,
-                "system": EVAL_SYSTEM,
+                "system": _SYSTEM_BLOCK,
                 "messages": [{"role": "user", "content": prompt}],
             },
             timeout=45,
