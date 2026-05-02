@@ -1,20 +1,23 @@
 # Job Agent
 
-Daily AI-assisted job search agent for Sweden. It collects roles from Jobtech and LinkedIn, filters out poor fits, asks Claude to rank a shortlist against a candidate profile, and sends a ranked Telegram digest every morning.
+Daily AI-assisted job search agent for Sweden. It collects roles from Arbetsformedlingen (Jobtech API), Remotive, and RemoteOK, filters out poor fits, asks Claude Haiku to batch-rank a shortlist against a candidate profile, and sends a ranked Telegram digest every morning.
 
-The project is intentionally small: one scheduled Python workflow, public job APIs/scraping, a private profile prompt, local JSON state, and Telegram delivery.
+The project is intentionally small: one scheduled Python workflow, public job APIs, a private profile prompt, local JSON state, and Telegram delivery.
 
 ## Features
 
-- Searches Arbetsformedlingen Jobtech and LinkedIn via `python-jobspy`
-- Includes a small remote-role search for reputable international companies
-- Deduplicates roles across sources
-- Filters obvious senior/poor-fit roles before using an LLM
-- Uses one batched Claude call over a locally ranked shortlist to balance quality and API cost
-- Scores jobs with Claude using structured JSON output
-- Sends a ranked Telegram digest with apply/save/skip buttons
-- Persists seen jobs and button state between GitHub Actions runs
-- Supports optional Supabase state and a Vercel Telegram webhook for instant button tracking
+- Fetches Swedish roles from the Arbetsformedlingen Jobtech API across multiple targeted queries
+- Fetches remote roles from Remotive (software-dev, devops, QA categories) and RemoteOK
+- Deduplicates roles across all three sources
+- Pre-filters by title/description keywords and location eligibility before spending any LLM tokens
+- On-site/hybrid roles must be in a commutable area (Stockholm, Uppsala, Gävle, Dalarna); remote roles from EU-based companies pass freely
+- Locally ranks and diversifies the shortlist (max 2 roles per company) before scoring
+- Scores jobs with a single batched Claude Haiku call for consistent quality at low cost
+- Uses prompt caching so the candidate profile is never re-tokenized mid-run
+- Sends a ranked Telegram digest with Apply / Save / Not Interested inline buttons
+- Processes Telegram button callbacks via long-polling or an instant Vercel webhook
+- Persists seen jobs, tracker state, and update offsets between GitHub Actions runs
+- Supports Supabase for shared hosted state and a Vercel webhook for instant button tracking
 - Runs manually or on a GitHub Actions schedule
 
 ## Screenshots
@@ -41,7 +44,7 @@ This repo keeps those out of source control:
 
 ## Supabase + Vercel
 
-The project works without hosted state, but Supabase and Vercel make Telegram buttons update immediately.
+The project works without hosted state, but Supabase and Vercel make Telegram buttons update immediately rather than on the next scheduled run.
 
 1. Create a Supabase project.
 2. Run `supabase_schema.sql` in the Supabase SQL editor.
@@ -78,7 +81,7 @@ curl "https://api.telegram.org/bot$TELEGRAM_TOKEN/setWebhook" \
 ## Local Run
 
 ```bash
-pip install -r requirements.txt python-jobspy
+pip install -r requirements.txt
 ```
 
 Create `candidate_profile.txt` locally, then set the required environment variables and run:
