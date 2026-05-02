@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Job Agent
-Sources: Jobtech API (Arbetsformedlingen) + LinkedIn via jobspy
+Sources: Jobtech API (Arbetsformedlingen) + Remotive + RemoteOK
 Brain:   Claude Haiku scores each job against full candidate profile
 Output:  Ranked Telegram messages with tap-to-track buttons, daily at 07:30
 """
@@ -36,9 +36,9 @@ MAX_DESC_CHARS   = 450
 MIN_LOCAL_PRIORITY = 6
 MAX_JOBS_PER_COMPANY = 2
 JOBTECH_LIMIT    = 30
-LINKEDIN_RESULTS = 10
-LINKEDIN_HOURS   = 24
 JOBTECH_URL      = "https://jobsearch.api.jobtechdev.se/search"
+REMOTIVE_URL     = "https://remotive.com/api/remote-jobs"
+REMOTEOK_URL     = "https://remoteok.com/api"
 CLAUDE_MODEL     = "claude-haiku-4-5-20251001"
 REPUTABLE_COMPANIES = [
     "spotify", "klarna", "tink", "mongodb", "elastic", "gitlab", "github",
@@ -297,70 +297,88 @@ def collect_jobtech():
         time.sleep(0.4)
     return pool
 
-# LinkedIn
-LINKEDIN_QUERIES = [
-    "junior java developer", "junior backend developer",
-    "junior software engineer", "junior fullstack developer",
-    "qa engineer junior", "junior devops engineer",
-    "graduate software developer", "junior .net developer",
-    "junior react developer", "junior qa tester",
-]
-REMOTE_LINKEDIN_QUERIES = [
-    "junior software engineer remote",
-    "junior backend developer remote",
-    "graduate software engineer remote",
-    "junior developer remote Europe",
-]
-REMOTE_LINKEDIN_LOCATIONS = ["European Union", "Sweden", "Scandinavia"]
-
 def strip_html(text):
     return re.sub(r"<[^>]+>", " ", text or "").strip()
 
-def collect_linkedin():
-    pool = {}
+# Remotive
+REMOTIVE_CATEGORIES = ["software-dev", "devops-sysadmin", "quality-assurance"]
+
+def fetch_remotive(category):
     try:
-        from jobspy import scrape_jobs
-        searches = [(query, "Sweden", False) for query in LINKEDIN_QUERIES]
-        searches += [
-            (query, location, True)
-            for query in REMOTE_LINKEDIN_QUERIES
-            for location in REMOTE_LINKEDIN_LOCATIONS
-        ]
-        for query, location, remote_only in searches:
-            remote_label = " remote" if remote_only else ""
-            print(f"    [{query} @ {location}{remote_label}]")
-            try:
-                df = scrape_jobs(
-                    site_name=["linkedin"],
-                    search_term=query,
-                    location=location,
-                    results_wanted=LINKEDIN_RESULTS,
-                    hours_old=LINKEDIN_HOURS,
-                    is_remote=remote_only,
-                    linkedin_fetch_description=True,
-                )
-                for _, row in df.iterrows():
-                    title   = str(row.get("title") or "Unknown role")
-                    company = str(row.get("company") or "Unknown")
-                    is_remote = bool(row.get("is_remote")) or remote_only
-                    key     = job_key(title, company)
-                    if key not in pool:
-                        pool[key] = {
-                            "key":       key,
-                            "title":     title,
-                            "company":   company,
-                            "location":  str(row.get("location") or "Sweden"),
-                            "url":       str(row.get("job_url") or ""),
-                            "desc":      strip_html(str(row.get("description") or ""))[:4000],
-                            "published": str(row.get("date_posted") or "")[:10],
-                            "source":    "LinkedIn Remote" if is_remote else "LinkedIn",
-                            "remote":    is_remote,
-                        }
-            except Exception as e:
-                print(f"    LinkedIn query error ({query!r}, {location!r}): {e}")
-            time.sleep(2)
-    except ImportError:
-        print("    jobspy not installed - skipping LinkedIn")
+        r = requests.get(
+            REMOTIVE_URL,
+            params={"category": category, "limit": 100},
+            timeout=15,
+            headers={"User-Agent": "Mozilla/5.0 job-agent/1.0"},
+        )
+        r.raise_for_status()
+        return r.json().get("jobs", [])
+    except Exception as e:
+        print(f"    Remotive error ({category}): {e}")
+        return []
+
+def parse_remotive(raw):
+    title   = raw.get("title", "Unknown role")
+    company = raw.get("company_name", "Unknown")
+    return {
+        "key":       job_key(title, company),
+        "title":     title,
+        "company":   company,
+        "location":  raw.get("candidate_required_location", "Remote"),
+        "url":       raw.get("url", ""),
+        "desc":      strip_html(raw.get("description", ""))[:4000],
+        "published": (raw.get("publication_date") or "")[:10],
+        "source":    "Remotive",
+        "remote":    True,
+    }
+
+def collect_remotive():
+    pool = {}
+    for category in REMOTIVE_CATEGORIES:
+        print(f"    [{category}]")
+        for raw in fetch_remotive(category):
+            job = parse_remotive(raw)
+            if job["key"] not in pool:
+                pool[job["key"]] = job
+        time.sleep(1)
+    return pool
+
+# RemoteOK
+def fetch_remoteok():
+    try:
+        r = requests.get(
+            REMOTEOK_URL,
+            timeout=15,
+            headers={"User-Agent": "Mozilla/5.0 job-agent/1.0"},
+        )
+        r.raise_for_status()
+        return [item for item in r.json() if isinstance(item, dict) and item.get("id")]
+    except Exception as e:
+        print(f"    RemoteOK error: {e}")
+        return []
+
+def parse_remoteok(raw):
+    title   = raw.get("position", "Unknown role")
+    company = raw.get("company", "Unknown")
+    return {
+        "key":       job_key(title, company),
+        "title":     title,
+        "company":   company,
+        "location":  "Remote",
+        "url":       raw.get("url", ""),
+        "desc":      strip_html(raw.get("description", ""))[:4000],
+        "published": (raw.get("date") or "")[:10],
+        "source":    "RemoteOK",
+        "remote":    True,
+    }
+
+def collect_remoteok():
+    pool = {}
+    print("    [all remote jobs]")
+    for raw in fetch_remoteok():
+        job = parse_remoteok(raw)
+        if job["key"] not in pool:
+            pool[job["key"]] = job
     return pool
 
 # Claude scoring
@@ -496,7 +514,7 @@ def claude_score_batch(jobs):
 
 # Telegram
 ROLE_LABEL  = {"junior-dev":"DEV","qa-test":"QA","devops":"OPS","adjacent":"ADJ","long-shot":"TRY"}
-SOURCE_LABEL = {"LinkedIn":"LI","LinkedIn Remote":"REMOTE","Arbetsformedlingen":"AF"}
+SOURCE_LABEL = {"Remotive":"REMOTE","RemoteOK":"REMOTE","Arbetsformedlingen":"AF"}
 score_label = lambda s: "HIGH" if s>=8 else "MED" if s>=6 else "LOW"
 
 def tg(method, **kwargs):
@@ -642,11 +660,13 @@ def main():
     # Collect
     print("  Fetching Jobtech...")
     jobtech_pool = collect_jobtech()
-    print("  Fetching LinkedIn...")
-    linkedin_pool = collect_linkedin()
+    print("  Fetching Remotive...")
+    remotive_pool = collect_remotive()
+    print("  Fetching RemoteOK...")
+    remoteok_pool = collect_remoteok()
 
-    all_jobs = {**jobtech_pool, **linkedin_pool}
-    print(f"  Total unique: {len(all_jobs)} (AF: {len(jobtech_pool)}, LI: {len(linkedin_pool)})")
+    all_jobs = {**jobtech_pool, **remotive_pool, **remoteok_pool}
+    print(f"  Total unique: {len(all_jobs)} (AF: {len(jobtech_pool)}, Remotive: {len(remotive_pool)}, RemoteOK: {len(remoteok_pool)})")
 
     # Filter seen + already actioned
     actioned_keys = {k for k,v in tracker.items() if v.get("status") in ("applied","skip")}
@@ -694,13 +714,13 @@ def main():
     print(f"  Scored >= {MIN_SCORE}: {len(scored)}  Sending top: {len(top)}")
 
     # Send header
-    af_count = sum(1 for j in candidates_to_score if j["source"]=="Arbetsformedlingen")
-    li_count = sum(1 for j in candidates_to_score if j["source"]=="LinkedIn")
-    remote_count = sum(1 for j in candidates_to_score if j["source"]=="LinkedIn Remote")
+    af_count      = sum(1 for j in candidates_to_score if j["source"] == "Arbetsformedlingen")
+    remotive_count = sum(1 for j in candidates_to_score if j["source"] == "Remotive")
+    remoteok_count = sum(1 for j in candidates_to_score if j["source"] == "RemoteOK")
     header = (
         f"<b>Job radar - {datetime.now():%d %b %Y}</b>\n"
         f"Evaluated <b>{len(candidates_to_score)}</b> of {len(candidates)} new roles "
-        f"(AF {af_count} - LI {li_count} - Remote {remote_count})\n"
+        f"(AF {af_count} - Remotive {remotive_count} - RemoteOK {remoteok_count})\n"
         f"<b>{len(top)}</b> worth applying - tap to track\n"
         "---------------------\n"
     )
