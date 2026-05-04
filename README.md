@@ -1,8 +1,14 @@
 # Job Agent
 
-Daily AI-assisted job search agent for Sweden. It collects roles from Arbetsformedlingen (Jobtech API), Remotive, and RemoteOK, filters out poor fits, asks Claude Haiku to batch-rank a shortlist against a candidate profile, and sends a ranked Telegram digest every morning.
+Daily AI-assisted job search agent for Sweden. It collects roles from
+Arbetsformedlingen (Jobtech API), Remotive, and RemoteOK, filters out poor fits
+and spammy sources, asks Claude Haiku to batch-rank a shortlist against a
+candidate profile, and sends a ranked Telegram digest every morning.
 
-The project is intentionally small: one scheduled Python workflow, public job APIs, a private profile prompt, local JSON state, and Telegram delivery.
+The runtime is intentionally small: one scheduled Python workflow, public job
+APIs, a private profile prompt, local JSON/Supabase state, and Telegram
+delivery. The code is split by responsibility so source collection, filtering,
+scoring, state, and Telegram delivery can evolve independently.
 
 ## Features
 
@@ -10,7 +16,14 @@ The project is intentionally small: one scheduled Python workflow, public job AP
 - Fetches remote roles from Remotive (software-dev, devops, QA categories) and RemoteOK
 - Deduplicates roles across all three sources
 - Pre-filters by title/description keywords and location eligibility before spending any LLM tokens
-- On-site/hybrid roles must be in a commutable area (Stockholm, Uppsala, Gävle, Dalarna); remote roles from EU-based companies pass freely
+- On-site/hybrid roles must be in a commutable area (Stockholm, Uppsala, Gavle, Dalarna)
+- Remote roles must be EU/Sweden/EMEA/time-zone compatible or from a reputable company
+- Blocks low-quality job boards, task-work listings, talent pools, AI-training
+  spam, and freelance marketplaces before LLM scoring
+- Targets junior development, QA automation, test automation,
+  application/technical/cloud support, integration, system developer, junior
+  DevOps, technical consultant, implementation consultant, and SQL/API
+  application specialist roles
 - Locally ranks and diversifies the shortlist (max 2 roles per company) before scoring
 - Scores jobs with a single batched Claude Haiku call for consistent quality at low cost
 - Uses prompt caching so the candidate profile is never re-tokenized mid-run
@@ -19,6 +32,21 @@ The project is intentionally small: one scheduled Python workflow, public job AP
 - Persists seen jobs, tracker state, and update offsets between GitHub Actions runs
 - Supports Supabase for shared hosted state and a Vercel webhook for instant button tracking
 - Runs manually or on a GitHub Actions schedule
+
+## Code Layout
+
+`job_agent.py` is a compatibility entrypoint used by GitHub Actions and local
+runs. The application code lives in `job_agent_app/`:
+
+- `config.py` - environment variables, paths, limits, and candidate profile loading
+- `filters.py` - relevance filters, spam/source quality checks, role boosts,
+  location rules, and candidate diversification
+- `sources.py` - Jobtech, Remotive, and RemoteOK fetch/parse logic
+- `scoring.py` - Claude prompts, request payloads, and JSON response parsing
+- `telegram.py` - digest messages, inline buttons, callback polling, and pipeline summary
+- `state.py` - seen jobs, tracker state, and Telegram update offset persistence
+- `pipeline.py` - top-level workflow orchestration
+- `utils.py` - shared helpers
 
 ## Screenshots
 
@@ -44,7 +72,8 @@ This repo keeps those out of source control:
 
 ## Supabase + Vercel
 
-The project works without hosted state, but Supabase and Vercel make Telegram buttons update immediately rather than on the next scheduled run.
+The project works without hosted state, but Supabase and Vercel make Telegram
+buttons update immediately rather than on the next scheduled run.
 
 1. Create a Supabase project.
 2. Run `supabase_schema.sql` in the Supabase SQL editor.

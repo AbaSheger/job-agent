@@ -1,0 +1,2 @@
+"""Job agent application package."""
+
