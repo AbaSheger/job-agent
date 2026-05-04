@@ -1,6 +1,7 @@
+from datetime import date, datetime, timedelta
 from urllib.parse import urlparse
 
-from .config import MAX_CANDIDATES_TO_SCORE, MAX_JOBS_PER_COMPANY
+from .config import MAX_CANDIDATES_TO_SCORE, MAX_JOB_AGE_DAYS, MAX_JOBS_PER_COMPANY
 
 
 REPUTABLE_COMPANIES = [
@@ -205,6 +206,24 @@ def pre_filter(title, description):
     return any(keyword in text for keyword in MUST_PASS)
 
 
+def parse_published_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value[:10]).date()
+    except ValueError:
+        return None
+
+
+def is_recent_job(job, today=None):
+    published = parse_published_date(job.get("published", ""))
+    if published is None:
+        return True
+
+    today = today or date.today()
+    return published >= today - timedelta(days=MAX_JOB_AGE_DAYS)
+
+
 def candidate_priority(job):
     text = searchable_text(job, max_desc_chars=500)
     boosts = {**BASE_PRIORITY_BOOSTS, **TARGET_ROLE_BOOSTS}
@@ -235,4 +254,3 @@ def diversify_candidates(candidates):
         if len(selected) >= MAX_CANDIDATES_TO_SCORE:
             break
     return selected
-

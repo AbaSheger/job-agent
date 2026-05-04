@@ -22,6 +22,7 @@ MAX_BATCH_RESULTS = 8
 MAX_DESC_CHARS = 450
 MIN_LOCAL_PRIORITY = 6
 MAX_JOBS_PER_COMPANY = 2
+MAX_JOB_AGE_DAYS = int(os.environ.get("MAX_JOB_AGE_DAYS", "45"))
 
 JOBTECH_LIMIT = 30
 JOBTECH_URL = "https://jobsearch.api.jobtechdev.se/search"
@@ -62,4 +63,3 @@ def load_profile():
 
 
 PROFILE = load_profile()
-

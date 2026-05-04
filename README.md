@@ -16,6 +16,7 @@ scoring, state, and Telegram delivery can evolve independently.
 - Fetches remote roles from Remotive (software-dev, devops, QA categories) and RemoteOK
 - Deduplicates roles across all three sources
 - Pre-filters by title/description keywords and location eligibility before spending any LLM tokens
+- Filters out stale postings older than `MAX_JOB_AGE_DAYS` days, default `45`
 - On-site/hybrid roles must be in a commutable area (Stockholm, Uppsala, Gavle, Dalarna)
 - Remote roles must be EU/Sweden/EMEA/time-zone compatible or from a reputable company
 - Blocks low-quality job boards, task-work listings, talent pools, AI-training
@@ -104,6 +105,7 @@ curl "https://api.telegram.org/bot$TELEGRAM_TOKEN/setWebhook" \
    - `TELEGRAM_CHAT_ID`
    - `ANTHROPIC_API_KEY`
    - `CANDIDATE_PROFILE`
+   - `MAX_JOB_AGE_DAYS` optional, defaults to `45`
 3. Enable Actions in the Actions tab.
 4. Trigger the workflow manually first to test it.
 

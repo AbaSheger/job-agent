@@ -8,6 +8,7 @@ from .filters import (
     candidate_priority,
     diversify_candidates,
     is_location_eligible,
+    is_recent_job,
     pre_filter,
 )
 from .scoring import claude_score_batch
@@ -26,6 +27,7 @@ def select_candidates(all_jobs, seen, tracker):
         if job["key"] not in seen and job["key"] not in actioned_keys
     ]
     candidates = [job for job in new_jobs if pre_filter(job["title"], job["desc"])]
+    candidates = [job for job in candidates if is_recent_job(job)]
     candidates = [job for job in candidates if is_location_eligible(job)]
     candidates = [
         job for job in candidates
@@ -143,4 +145,3 @@ def main():
     seen.update(all_jobs.keys())
     save_seen(seen)
     print("  Done.")
-
